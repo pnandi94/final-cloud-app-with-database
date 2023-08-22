@@ -1,7 +1,7 @@
 from django.shortcuts import render
 from django.http import HttpResponseRedirect
 # <HINT> Import any new Models here
-from .models import Course, Enrollment
+from .models import Course, Enrollment, Question, Choice, Submission
 from django.contrib.auth.models import User
 from django.shortcuts import get_object_or_404, render, redirect
 from django.urls import reverse
@@ -110,8 +110,52 @@ def enroll(request, course_id):
          # Collect the selected choices from exam form
          # Add each selected choice object to the submission object
          # Redirect to show_exam_result with the submission id
-#def submit(request, course_id):
+def submit(request, course_id):
+    # Get the current user and the course object
+    user = request.user
+    course = Course.objects.get(pk=course_id)
 
+    # Get the associated enrollment object
+    enrollment = Enrollment.objects.get(user=user, course=course)
+
+    if request.method == 'POST':
+        # Create a new submission object referring to the enrollment
+        submission = Submission.objects.create(enrollment=enrollment)
+
+        # Collect the selected choices from the request POST data
+        selected_choices = [int(choice_id) for choice_id in request.POST.values() if choice_id.isdigit()]
+
+        # Add each selected choice object to the submission
+        submission.choices.add(*selected_choices)
+
+        # Redirect to a show_exam_result view with the submission id
+        return redirect('show_exam_result', submission_id=submission.id)
+
+    return render(request, 'exam_submission.html', {'course': course})
+
+def show_exam_result(request, course_id, submission_id):
+    # Get the course object and submission object based on their IDs
+    course = get_object_or_404(Course, pk=course_id)
+    submission = get_object_or_404(Submission, pk=submission_id)
+
+    # Get the selected choice IDs from the submission record
+    selected_choice_ids = submission.choices.values_list('id', flat=True)
+
+    # Calculate the total score by adding up the grades for all questions in the course
+    total_score = sum(question.grade for question in course.exam.questions.all() if question.choice_set.filter(pk__in=selected_choice_ids, is_correct=True).count() > 0)
+
+    # Calculate if the learner passed the exam (for example, passing score > 50%)
+    passing_score = 0.5 * sum(question.grade for question in course.exam.questions.all())
+    passed = total_score >= passing_score
+
+    context = {
+        'course': course,
+        'selected_ids': selected_choice_ids,
+        'grade': total_score,
+        'passed': passed
+    }
+
+    return render(request, 'exam_result.html', context)
 
 # <HINT> A example method to collect the selected choices from the exam form from the request object
 #def extract_answers(request):
